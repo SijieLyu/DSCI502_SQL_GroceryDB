@@ -219,6 +219,144 @@ values(null,'Seventh Generation Inc.','Mosh','William','800-211-4279','VT','Burl
 select * from Product;
 insert into Product values (null,'Disinfecting Wipes', 80,8,2.21,4.99),(null,'Liquid Hand Dish', 90,8,2.06,3.39);
 
+----------------------------------------------------
+use grocerydb;
+
+################################
+## 		 	 QUERIES		  ##
+################################
+
+
+## Query 1: find out who placed order number 5
+select customer_first, customer_last 
+from customers c, orders o
+where c.customer_id = o.customer_id and order_number = 5
+group by customer_first, customer_last;
+
+## Query 2: find out order number 5's customer name and total sales revenue
+-- step 1: find the product_id, quantity for each items in order number 5
+select o.customer_id, od.product_id, od.order_quantity
+from orders o, order_details od
+where o.order_number = od.order_number AND o.order_number=5; ## this will be 't1' in the later nested query
+
+-- step 2: find the prices of each product with product id
+select product_id, selling_price
+from product; ## this will be 't1' in the later nested query
+
+-- step 3: write the subquery. 
+--         function: revenue = t2.selling_price * t1.quantity 
+select sum(t2.selling_price*t1.order_quantity) as total_selling_revenue
+from 
+	(select o.customer_id, od.product_id, od.order_quantity
+	from orders o, order_details od
+	where o.order_number = od.order_number AND o.order_number=5) as t1
+inner join
+	(select product_id, selling_price
+	from product) as t2
+on t1.product_id = t2.product_id;
+
+-- join with customer name, and order number
+select c.customer_id, c.customer_first,c.customer_last, t1.order_number,
+	   sum(t2.selling_price*t1.order_quantity) as total_selling_revenue
+from 
+	(select o.customer_id, od.order_number, od.product_id, od.order_quantity
+	from orders o, order_details od
+	where o.order_number = od.order_number AND o.order_number=5) as t1
+inner join
+	(select product_id, selling_price
+	from product) as t2
+on t1.product_id = t2.product_id
+inner join customers c
+on t1.customer_id = c.customer_id;
+
+
+################################
+## 		  PROCEDURES		  ##
+################################
+
+## Find out any order's customer name and total sale revenue 
+	-- This is a procedure with an input parameter. 
+    
+drop procedure if exists Order_Revenue;
+    
+delimiter $$
+create procedure Order_Revenue(in Please_Enter_Order_Number int)
+begin
+		select c.customer_id as Customer_ID, 
+			   c.customer_first as First_Name,
+               c.customer_last as Last_Name,
+               t1.order_number as Order_Number,
+			   sum(t2.selling_price*t1.order_quantity) as Total_Selling_Revenue
+		from 
+			(select o.customer_id, od.order_number, od.product_id, od.order_quantity
+			from orders o, order_details od
+			where o.order_number = od.order_number AND o.order_number=Please_Enter_Order_Number) as t1
+		inner join
+			(select product_id, selling_price
+			from product) as t2
+		on t1.product_id = t2.product_id
+		inner join customers c
+		on t1.customer_id = c.customer_id;
+end $$
+DELIMITER ;
+
+################################
+## 		   FUNCTIONS		  ##
+################################
+
+## create a function to find out any order's customer name, and its total sale revenue.
+SET GLOBAL log_bin_trust_function_creators = 1; -- relaxes the checking for non-deterministic functions.
+SET SESSION sql_mode = ''; -- remove the strict sql mode for this session.
+
+drop function if exists get_order_revenue;
+
+DELIMITER $$
+create function get_order_revenue(p_order_num int) returns decimal(10,2)
+begin
+declare v_sale_revenue decimal(10,2);
+
+	select sum(t2.selling_price*t1.order_quantity) as Total_Selling_Revenue
+	into v_sale_revenue
+	from 
+			(select o.customer_id, od.order_number, od.product_id, od.order_quantity
+			from orders o, order_details od
+			where o.order_number = od.order_number AND o.order_number=p_order_num) as t1
+	inner join
+			(select product_id, selling_price
+			from product) as t2
+	on t1.product_id = t2.product_id
+	inner join customers c
+	on t1.customer_id = c.customer_id;
+    
+return v_sale_revenue; 
+end $$
+DELIMITER ;
+
+## try the function - 
+select get_order_revenue(4);
+
+
+
+################################
+##		 	TRIGGERS		  ##
+################################
+
+## Create a trigger that update the state abbreviation to upper case.
+create trigger tr_ins_cust -- create a trigger that happens when inserting into customers table
+before insert on customers
+for each row
+set new.Customer_State = upper(new.Customer_State);
+
+## try it out
+select * from customers;
+
+insert into customers(customer_first, customer_last,customer_state)
+values ('Jonh', 'Doe', 'nc'); -- Here the North Carolina state is in lower case
+
+select * from customers; -- In here we can see that 'nc' has been changed to 'NC'.
+
+delete from customers
+where customer_id = 6; -- delete this fake record. 
 
 
 /*
@@ -539,3 +677,5 @@ values (old.Customer_ID, old.Month_BirthDay, old.discount_modifier, old.reminder
 end//
 delimiter ; 
 select * from UpdateRecords;
+
+
